@@ -10,6 +10,11 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
+      - name: Clean Buildozer build directory
+        run: |
+          rm -rf .buildozer/
+          buildozer android clean
+          
       - name: Checkout repository
         uses: actions/checkout@v4
 
