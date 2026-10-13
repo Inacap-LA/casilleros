@@ -17,6 +17,3 @@ android.minapi = 21
 android.accept_sdk_license = True
 android.archs = arm64-v8a
 android.ndk = 25b
-
-# Permisos requeridos para Android (para enviar correos)
-android.permissions = INTERNET
