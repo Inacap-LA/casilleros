@@ -3,7 +3,7 @@ title = Control Casilleros
 package.name = casilleros
 package.domain = cl.duoc.casilleros
 source.dir = .
-source.include_exts = py,png,jpg,kv,db
+source.include_exts = py,png,jpg,kv,atlas,db
 version = 1.0.0
 
 requirements = python3,kivy==2.2.1,kivymd==1.1.1,requests,urllib3,pillow
