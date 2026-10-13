@@ -1,7 +1,8 @@
-import sqlite3
+import os
+import shutil
 import smtplib
+import sqlite3
 import threading
-import time
 from datetime import datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -9,12 +10,15 @@ from email.mime.text import MIMEText
 from kivy.clock import Clock
 from kivy.core.window import Window
 from kivy.lang import Builder
+from kivy.utils import platform
 
 from kivymd.app import MDApp
+from kivymd.uix.boxlayout import MDBoxLayout
 from kivymd.uix.button import MDFlatButton, MDRaisedButton
 from kivymd.uix.dialog import MDDialog
 from kivymd.uix.list import MDList, TwoLineListItem
-from kivymd.uix.menu import MDDropdownMenu
+from kivymd.uix.scrollview import MDScrollView
+from kivymd.uix.textfield import MDTextField
 
 # ==============================================================================
 # CONFIGURACIÓN DE CORREO ELECTRÓNICO PARA INFORMES
@@ -24,6 +28,33 @@ SMTP_PORT = 587
 CORREO_EMISOR = "tu_correo@gmail.com"
 CORREO_PASSWORD = "tu_clave_de_aplicacion"
 CORREO_DESTINATARIO = "destinatario_informe@empresa.cl"
+
+
+def get_db_path():
+  """Obtiene la ruta adecuada de la Base de Datos para PC o Android (APK)."""
+  db_name = "casilleros.db"
+
+  if platform == "android":
+    try:
+      from android.storage import app_storage_path
+
+      app_dir = app_storage_path()
+      target_path = os.path.join(app_dir, db_name)
+
+      # Si no existe en la memoria privada de Android, la copiamos desde los Assets
+      if not os.path.exists(target_path):
+        if os.path.exists(db_name):
+          shutil.copyfile(db_name, target_path)
+        elif os.path.exists(os.path.join(os.path.dirname(__file__), db_name)):
+          shutil.copyfile(
+              os.path.join(os.path.dirname(__file__), db_name), target_path
+          )
+      return target_path
+    except Exception as e:
+      print(f"Error detectando ruta Android: {e}")
+      return db_name
+  return db_name
+
 
 KV = """
 MDScreen:
@@ -163,6 +194,7 @@ class CasillerosApp(MDApp):
 
   def __init__(self, **kwargs):
     super().__init__(**kwargs)
+    self.db_path = get_db_path()
     self.modo_actual = "SOLICITAR"
     self.dialog_registro = None
     self.dialog_ocupados = None
@@ -175,9 +207,12 @@ class CasillerosApp(MDApp):
     return screen
 
   def init_db_schema(self):
-    """Verifica la base de datos e inicializa tablas necesarias."""
-    with sqlite3.connect("casilleros.db") as conn:
+    """Verifica e inicializa la estructura de la base de datos."""
+    with sqlite3.connect(self.db_path) as conn:
       cursor = conn.cursor()
+      cursor.execute("PRAGMA foreign_keys = ON;")
+
+      # Intenta agregar la columna rol si no existe
       try:
         cursor.execute(
             "ALTER TABLE alumnos ADD COLUMN rol TEXT DEFAULT 'ESTUDIANTE'"
@@ -185,6 +220,7 @@ class CasillerosApp(MDApp):
       except sqlite3.OperationalError:
         pass
 
+      # Tabla de bitácora/solicitudes
       cursor.execute("""
                 CREATE TABLE IF NOT EXISTS solicitudes (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -211,7 +247,7 @@ class CasillerosApp(MDApp):
     self.root.ids.txt_rut.focus = True
 
   def actualizar_estadisticas(self):
-    with sqlite3.connect("casilleros.db") as conn:
+    with sqlite3.connect(self.db_path) as conn:
       cursor = conn.cursor()
       cursor.execute(
           "SELECT COUNT(*) FROM candados WHERE estado = 'disponible'"
@@ -236,7 +272,7 @@ class CasillerosApp(MDApp):
     if not rut_busqueda:
       return
 
-    with sqlite3.connect("casilleros.db") as conn:
+    with sqlite3.connect(self.db_path) as conn:
       cursor = conn.cursor()
       cursor.execute(
           """
@@ -278,7 +314,7 @@ class CasillerosApp(MDApp):
         p_id, c_id, cas_num = prestamo_activo
         cursor.execute(
             "UPDATE prestamos SET fecha_devolucion = CURRENT_TIMESTAMP, estado"
-            " = 'finalizado' WHERE id = ?",
+            " = 'devuelto' WHERE id = ?",
             (p_id,),
         )
         cursor.execute(
@@ -307,7 +343,7 @@ class CasillerosApp(MDApp):
           self.mostrar_resultado(
               "⚠️ YA TIENE UN CANDADO ASIGNADO",
               f"El usuario {nombre} [{rol}] ya posee el candado {c_id} (Casillero"
-              " {cas_num}).",
+              f" {cas_num}).",
               [0.9, 0.29, 0.23, 1],
           )
           return
@@ -359,111 +395,22 @@ class CasillerosApp(MDApp):
     self.root.ids.lbl_res_detalle.text = detalle
 
   def mostrar_modal_registro(self, rut):
-    content = MDList()
-    btn_guardar = MDRaisedButton(
-        text="Guardar",
-        on_release=lambda x: self.guardar_registro_rapido(rut, "NUEVO USER"),
+    """Modal interactivo para registrar un usuario no encontrado."""
+    box = MDBoxLayout(
+        orientation="vertical", spacing="10dp", size_hint_y=None, height="120dp"
     )
-    self.dialog_registro = MDDialog(
-        title=f"⚠️ RUT No Encontrado: {rut}",
-        type="custom",
-        content_cls=content,
-        buttons=[
-            MDFlatButton(
-                text="Cancelar",
-                on_release=lambda x: self.dialog_registro.dismiss(),
-            ),
-            btn_guardar,
-        ],
+    txt_nombre = MDTextField(
+        hint_text="Nombre y Apellidos", font_size="16sp"
     )
-    self.dialog_registro.open()
-
-  def guardar_registro_rapido(self, rut, nombre, rol="PERSONAL"):
-    with sqlite3.connect("casilleros.db") as conn:
-      cursor = conn.cursor()
-      cursor.execute(
-          """
-                INSERT OR REPLACE INTO alumnos (rut, nombre, carrera, area, sede, periodo, carga, rol)
-                VALUES (?, ?, 'Personal Institucional', 'Administración', 'LOS ÁNGELES', '2026', 'N/A', ?)
-            """,
-          (rut, nombre, rol),
-      )
-      conn.commit()
-    if self.dialog_registro:
-      self.dialog_registro.dismiss()
-    self.procesar_escaneo(rut)
-
-  def mostrar_ocupados(self):
-    with sqlite3.connect("casilleros.db") as conn:
-      cursor = conn.cursor()
-      cursor.execute("""
-                SELECT p.id_candado, c.num_casillero, a.nombre, COALESCE(a.rol, 'ESTUDIANTE')
-                FROM prestamos p
-                JOIN candados c ON p.id_candado = c.id_candado
-                JOIN alumnos a ON p.rut_alumno = a.rut
-                WHERE p.estado = 'activo'
-            """)
-      filas = cursor.fetchall()
-
-    lista = MDList()
-    for f in filas:
-      lista.add_widget(
-          TwoLineListItem(
-              text=f"Candado {f[0]} (Casillero {f[1]})",
-              secondary_text=f"{f[2]} [{f[3]}]",
-          )
-      )
-
-    self.dialog_ocupados = MDDialog(
-        title="📋 Candados Ocupados",
-        type="confirmation",
-        content_cls=lista,
-        buttons=[
-            MDFlatButton(
-                text="Cerrar",
-                on_release=lambda x: self.dialog_ocupados.dismiss(),
-            )
-        ],
+    txt_carrera = MDTextField(
+        hint_text="Carrera / Departamento",
+        text="Personal Institucional",
+        font_size="16sp",
     )
-    self.dialog_ocupados.open()
+    box.add_widget(txt_nombre)
+    box.add_widget(txt_carrera)
 
-  def enviar_informe_manual(self):
-    threading.Thread(target=self._generar_y_enviar_email, daemon=True).start()
-
-  def _generar_y_enviar_email(self):
-    fecha_hoy = datetime.now().strftime("%d/%m/%Y")
-    with sqlite3.connect("casilleros.db") as conn:
-      cursor = conn.cursor()
-      cursor.execute(
-          "SELECT COUNT(*) FROM solicitudes WHERE DATE(fecha_hora) ="
-          " DATE('now', 'localtime') AND accion = 'SOLICITUD'"
-      )
-      tot_solicitudes = cursor.fetchone()[0]
-
-    try:
-      msg = MIMEMultipart()
-      msg["From"] = CORREO_EMISOR
-      msg["To"] = CORREO_DESTINATARIO
-      msg["Subject"] = (
-          f"📊 Reporte Diario de Casilleros - {fecha_hoy} ({tot_solicitudes}"
-          " préstamos)"
-      )
-      msg.attach(
-          MIMEText(
-              f"Reporte de uso de casilleros del día {fecha_hoy}. Total"
-              f" solicitudes: {tot_solicitudes}",
-              "plain",
-          )
-      )
-
-      server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
-      server.starttls()
-      server.login(CORREO_EMISOR, CORREO_PASSWORD)
-      server.sendmail(CORREO_EMISOR, CORREO_DESTINATARIO, msg.as_string())
-      server.quit()
-    except Exception as e:
-      print("Error al enviar email:", e)
-
-
-if __name__ == "__main__":
-  CasillerosApp().run()
+    def guardar_accion(x):
+      nom = txt_nombre.text.strip() or f"Usuario {rut}"
+      car = txt_carrera.text.strip() or "Personal Institucional"
+      self.guardar_registro
