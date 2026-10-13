@@ -6,7 +6,7 @@ source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,db
 version = 1.0.0
 
-requirements = python3,kivy==2.2.1,kivymd==1.1.1,requests,urllib3,pillow
+requirements = python3,kivy==2.2.1,kivymd==1.1.1,requests,urllib3,pillow,openssl
 
 orientation = landscape
 fullscreen = 1
@@ -17,12 +17,6 @@ android.minapi = 21
 android.accept_sdk_license = True
 android.archs = arm64-v8a
 android.ndk = 25b
-
-# Incluye el archivo de base de datos entre las extensiones
-source.include_exts = py,png,jpg,kv,atlas,db
-
-# Requisitos de bibliotecas en Python
-requirements = python3,kivy==2.2.1,kivymd==1.1.1,pillow,urllib3,openssl
 
 # Permisos requeridos para Android (para enviar correos)
 android.permissions = INTERNET
