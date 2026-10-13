@@ -18,15 +18,32 @@ jobs:
         with:
           python-version: '3.10'
 
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential ccache git libffi-dev libssl-dev openjdk-17-jdk zip unzip zlib1g-dev libltdl-dev autoconf libtool pkg-config
+          sudo apt-get install -y build-essential ccache git libffi-dev libssl-dev zip unzip zlib1g-dev libltdl-dev autoconf libtool pkg-config
+
+      - name: Cache Buildozer & Android SDK/NDK
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.buildozer
+            .buildozer
+            ~/.ccache
+          key: ${{ runner.os }}-buildozer-${{ hashFiles('buildozer.spec') }}
+          restore-keys: |
+            ${{ runner.os }}-buildozer-
 
       - name: Install Buildozer and Cython
         run: |
-          pip install --upgrade pip
-          pip install "cython<3.0.0" buildozer
+          python -m pip install --upgrade pip
+          pip install "cython>=3.0.10" "buildozer>=1.5.0"
 
       - name: Build APK
         run: |
@@ -37,8 +54,3 @@ jobs:
         with:
           name: app-apk
           path: bin/*.apk
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install "cython>=3.0.10" "buildozer>=1.5.0"
