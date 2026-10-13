@@ -17,3 +17,13 @@ android.minapi = 21
 android.accept_sdk_license = True
 android.archs = arm64-v8a
 android.ndk = 25b
+
+[buildozer]
+# Nivel de detalle del registro:
+# 0 = Solo errores
+# 1 = Información general (Recomendado para GitHub Actions)
+# 2 = Depuración completa (genera demasiado texto y recorta el log)
+log_level = 1
+
+# (int) Mostrar advertencia si buildozer se ejecuta como root (0 = no, 1 = sí)
+warn_on_root = 1
