@@ -6,7 +6,7 @@ source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,db
 version = 1.0.0
 
-requirements = python3,kivy==2.2.1,kivymd==1.1.1,requests,urllib3,pillow,openssl
+requirements = python3==3.11.8,kivy==2.3.0,kivymd==1.1.1,requests,urllib3,pillow,openssl
 
 orientation = landscape
 fullscreen = 1
