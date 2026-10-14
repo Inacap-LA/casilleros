@@ -23,7 +23,7 @@ log_level = 2
 # Se genera APK debug de instalación directa. Mantener API 33 reduce cambios
 # respecto al proyecto original; actualizar a API 35+ para publicar en Play.
 android.api = 33
-android.minapi = 21
+android.minapi = 26
 android.ndk = 25b
 android.accept_sdk_license = True
 android.skip_update = False
