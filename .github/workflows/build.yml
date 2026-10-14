@@ -2,7 +2,9 @@ name: Build Android APK
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
   workflow_dispatch:
 
 jobs:
@@ -13,12 +15,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Set up Python 3.10
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: "3.10"
 
-      - name: Set up JDK 17
+      - name: Set up Java 17
         uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
@@ -29,12 +31,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential ccache git libffi-dev libssl-dev zip unzip zlib1g-dev libltdl-dev autoconf libtool pkg-config
 
-      - name: Install Buildozer and Cython
+      - name: Install Buildozer and Cython (Versión estable)
         run: |
           python -m pip install --upgrade pip
           pip install "cython==0.29.36" "buildozer>=1.5.0"
 
-      - name: Clean old build directory
+      - name: Limpiar directorio previo
         run: rm -rf .buildozer/
 
       - name: Cache Buildozer & Android SDK/NDK
@@ -48,12 +50,13 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-buildozer-v4-
 
-      - name: Build APK
+      - name: Build APK with Buildozer
         run: |
           buildozer android debug
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: app-apk
+          name: Casilleros-App-Debug
           path: bin/*.apk
+          retention-days: 7
