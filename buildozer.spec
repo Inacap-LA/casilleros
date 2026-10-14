@@ -23,7 +23,7 @@ android.ndk = 25b
 # 0 = Solo errores
 # 1 = Información general (Recomendado para GitHub Actions)
 # 2 = Depuración completa (genera demasiado texto y recorta el log)
-log_level = 1
+log_level = 2
 
 # (int) Mostrar advertencia si buildozer se ejecuta como root (0 = no, 1 = sí)
 warn_on_root = 1
