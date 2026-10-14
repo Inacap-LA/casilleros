@@ -1,60 +1,33 @@
-import os
-import shutil
-import smtplib
-import sqlite3
-import threading
+"""Interfaz KivyMD para el control institucional de préstamos de candados.
+
+Versión corregida: lógica SQLite separada y envío de informe sin claves SMTP.
+Requiere Kivy 2.3.0 y KivyMD 1.1.1.
+"""
+
 from datetime import datetime
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
+import sqlite3
+from urllib.parse import quote
+import webbrowser
 
 from kivy.clock import Clock
-from kivy.core.window import Window
 from kivy.lang import Builder
 from kivy.utils import platform
 
 from kivymd.app import MDApp
 from kivymd.uix.boxlayout import MDBoxLayout
-from kivymd.uix.button import MDFlatButton, MDRaisedButton
+from kivymd.uix.button import MDFlatButton
 from kivymd.uix.dialog import MDDialog
 from kivymd.uix.list import MDList, TwoLineListItem
 from kivymd.uix.scrollview import MDScrollView
 from kivymd.uix.textfield import MDTextField
 
-# ==============================================================================
-# CONFIGURACIÓN DE CORREO ELECTRÓNICO PARA INFORMES
-# ==============================================================================
-SMTP_SERVER = "smtp.gmail.com"
-SMTP_PORT = 587
-CORREO_EMISOR = "tu_correo@gmail.com"
-CORREO_PASSWORD = "tu_clave_de_aplicacion"
-CORREO_DESTINATARIO = "destinatario_informe@empresa.cl"
+from database import (
+    BusquedaAmbigua, GestorCasilleros, OperacionNoPermitida,
+    normalizar_rut, obtener_ruta_db,
+)
 
-
-def get_db_path():
-  """Obtiene la ruta adecuada de la Base de Datos para PC o Android (APK)."""
-  db_name = "casilleros.db"
-
-  if platform == "android":
-    try:
-      from android.storage import app_storage_path
-
-      app_dir = app_storage_path()
-      target_path = os.path.join(app_dir, db_name)
-
-      # Si no existe en la memoria privada de Android, la copiamos desde los Assets
-      if not os.path.exists(target_path):
-        if os.path.exists(db_name):
-          shutil.copyfile(db_name, target_path)
-        elif os.path.exists(os.path.join(os.path.dirname(__file__), db_name)):
-          shutil.copyfile(
-              os.path.join(os.path.dirname(__file__), db_name), target_path
-          )
-      return target_path
-    except Exception as e:
-      print(f"Error detectando ruta Android: {e}")
-      return db_name
-  return db_name
-
+# Reemplazar por una casilla INSTITUCIONAL autorizada, nunca por una contraseña.
+DESTINATARIO_INFORME = "destinatario_informe@empresa.cl"
 
 KV = """
 MDScreen:
@@ -63,354 +36,337 @@ MDScreen:
     MDBoxLayout:
         orientation: 'vertical'
 
-        # Barra Superior de Navegación
         MDTopAppBar:
-            title: "🔒 Control de Casilleros y Candados"
+            title: 'Control de Casilleros y Candados'
             elevation: 4
             right_action_items:
-                [["table", lambda x: app.mostrar_ocupados()], ["email-send", lambda x: app.enviar_informe_manual()]]
+                [['table', lambda x: app.mostrar_ocupados()], ['email-send', lambda x: app.enviar_informe_manual()]]
 
         MDScrollView:
             MDBoxLayout:
                 orientation: 'vertical'
-                padding: "16dp"
-                spacing: "16dp"
+                padding: '16dp'
+                spacing: '16dp'
                 size_hint_y: None
                 height: self.minimum_height
 
-                # Tarjeta de Indicadores / Estadísticas
                 MDCard:
                     orientation: 'horizontal'
-                    padding: "12dp"
-                    spacing: "12dp"
+                    padding: '12dp'
+                    spacing: '8dp'
                     size_hint_y: None
-                    height: "60dp"
+                    height: '72dp'
                     radius: [12,]
                     md_bg_color: 1, 1, 1, 1
                     elevation: 2
 
                     MDLabel:
                         id: lbl_disp
-                        text: "Disponibles: --"
+                        text: 'Disponibles: --'
                         bold: True
-                        theme_text_color: "Custom"
+                        theme_text_color: 'Custom'
                         text_color: 0.15, 0.68, 0.37, 1
-                        halign: "center"
+                        halign: 'center'
+                        font_style: 'Caption'
 
                     MDLabel:
                         id: lbl_prest
-                        text: "Prestados: --"
+                        text: 'Prestados: --'
                         bold: True
-                        theme_text_color: "Custom"
+                        theme_text_color: 'Custom'
                         text_color: 0.9, 0.29, 0.23, 1
-                        halign: "center"
+                        halign: 'center'
+                        font_style: 'Caption'
 
                     MDLabel:
                         id: lbl_mov
-                        text: "Movimientos Hoy: --"
+                        text: 'Movimientos hoy: --'
                         bold: True
-                        theme_text_color: "Custom"
+                        theme_text_color: 'Custom'
                         text_color: 0.16, 0.5, 0.73, 1
-                        halign: "center"
+                        halign: 'center'
+                        font_style: 'Caption'
 
-                # Selector de Modo: Solicitar vs Devolver
                 MDCard:
                     orientation: 'vertical'
-                    padding: "16dp"
-                    spacing: "10dp"
+                    padding: '16dp'
+                    spacing: '10dp'
                     size_hint_y: None
-                    height: "110dp"
+                    height: '112dp'
                     radius: [12,]
                     elevation: 2
 
                     MDLabel:
-                        text: "Seleccione Operación:"
-                        font_style: "Subtitle1"
+                        text: 'Seleccione operación:'
+                        font_style: 'Subtitle1'
                         bold: True
 
                     MDBoxLayout:
-                        spacing: "12dp"
+                        spacing: '8dp'
 
                         MDRaisedButton:
                             id: btn_solicitar
-                            text: "🔑 SOLICITAR CANDADO"
+                            text: 'SOLICITAR'
                             size_hint_x: 0.5
                             md_bg_color: 0.15, 0.68, 0.37, 1
-                            on_release: app.set_modo("SOLICITAR")
+                            on_release: app.set_modo('SOLICITAR')
 
                         MDRaisedButton:
                             id: btn_devolver
-                            text: "🔄 DEVOLVER CANDADO"
+                            text: 'DEVOLVER'
                             size_hint_x: 0.5
                             md_bg_color: 0.6, 0.6, 0.6, 1
-                            on_release: app.set_modo("DEVOLVER")
+                            on_release: app.set_modo('DEVOLVER')
 
-                # Campo de Lectura / Escaneo de RUT
                 MDCard:
                     orientation: 'vertical'
-                    padding: "16dp"
-                    spacing: "10dp"
+                    padding: '16dp'
+                    spacing: '8dp'
                     size_hint_y: None
-                    height: "110dp"
+                    height: '122dp'
                     radius: [12,]
                     elevation: 2
 
                     MDTextField:
                         id: txt_rut
-                        hint_text: "Escanee el carnet o ingrese RUT / Nombre..."
-                        font_size: "20sp"
+                        hint_text: 'Escanee carnet o ingrese RUT / Nombre'
+                        helper_text: 'Presione Enter para buscar'
+                        helper_text_mode: 'persistent'
+                        font_size: '18sp'
+                        multiline: False
                         on_text_validate: app.procesar_escaneo(self.text)
 
-                # Panel de Resultado de la Operación
                 MDCard:
-                    id: card_resultado
                     orientation: 'vertical'
-                    padding: "20dp"
-                    spacing: "10dp"
+                    padding: '20dp'
+                    spacing: '10dp'
                     size_hint_y: None
-                    height: "260dp"
+                    height: '290dp'
                     radius: [12,]
                     md_bg_color: 1, 1, 1, 1
                     elevation: 2
 
                     MDLabel:
                         id: lbl_res_titulo
-                        text: "ESPERANDO LECTURA"
-                        font_style: "H6"
+                        text: 'ESPERANDO LECTURA'
+                        font_style: 'H6'
                         bold: True
-                        theme_text_color: "Custom"
+                        theme_text_color: 'Custom'
                         text_color: 0.5, 0.5, 0.5, 1
+                        size_hint_y: None
+                        height: '48dp'
 
                     MDSeparator:
 
                     MDLabel:
                         id: lbl_res_detalle
-                        text: "Seleccione la operación en los botones superiores y pase el carnet por el lector USB/Bluetooth..."
-                        font_style: "Body1"
+                        text: 'Seleccione la operación y escanee el carnet con su lector USB/Bluetooth.'
+                        font_style: 'Body1'
+                        valign: 'top'
 """
 
 
 class CasillerosApp(MDApp):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.db = GestorCasilleros(obtener_ruta_db())
+        self.modo_actual = "SOLICITAR"
+        self.dialog_registro = None
+        self.dialog_ocupados = None
 
-  def __init__(self, **kwargs):
-    super().__init__(**kwargs)
-    self.db_path = get_db_path()
-    self.modo_actual = "SOLICITAR"
-    self.dialog_registro = None
-    self.dialog_ocupados = None
+    def build(self):
+        self.theme_cls.primary_palette = "Blue"
+        self.db.inicializar()
+        pantalla = Builder.load_string(KV)
+        Clock.schedule_once(lambda dt: self.actualizar_estadisticas(), 0.5)
+        Clock.schedule_once(lambda dt: self._enfocar_rut(), 0.75)
+        return pantalla
 
-  def build(self):
-    self.theme_cls.primary_palette = "Blue"
-    self.init_db_schema()
-    screen = Builder.load_string(KV)
-    Clock.schedule_once(lambda dt: self.actualizar_estadisticas(), 0.5)
-    return screen
+    def _enfocar_rut(self):
+        if self.root:
+            self.root.ids.txt_rut.focus = True
 
-  def init_db_schema(self):
-    """Verifica e inicializa la estructura de la base de datos."""
-    with sqlite3.connect(self.db_path) as conn:
-      cursor = conn.cursor()
-      cursor.execute("PRAGMA foreign_keys = ON;")
-
-      # Intenta agregar la columna rol si no existe
-      try:
-        cursor.execute(
-            "ALTER TABLE alumnos ADD COLUMN rol TEXT DEFAULT 'ESTUDIANTE'"
+    def set_modo(self, modo):
+        if modo not in ("SOLICITAR", "DEVOLVER"):
+            return
+        self.modo_actual = modo
+        self.root.ids.btn_solicitar.md_bg_color = (
+            [0.15, 0.68, 0.37, 1] if modo == "SOLICITAR" else [0.6, 0.6, 0.6, 1]
         )
-      except sqlite3.OperationalError:
-        pass
-
-      # Tabla de bitácora/solicitudes
-      cursor.execute("""
-                CREATE TABLE IF NOT EXISTS solicitudes (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    rut TEXT,
-                    nombre TEXT,
-                    rol TEXT,
-                    carrera TEXT,
-                    accion TEXT,
-                    id_candado TEXT,
-                    num_casillero TEXT,
-                    fecha_hora DATETIME DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-      conn.commit()
-
-  def set_modo(self, modo):
-    self.modo_actual = modo
-    if modo == "SOLICITAR":
-      self.root.ids.btn_solicitar.md_bg_color = [0.15, 0.68, 0.37, 1]
-      self.root.ids.btn_devolver.md_bg_color = [0.6, 0.6, 0.6, 1]
-    else:
-      self.root.ids.btn_solicitar.md_bg_color = [0.6, 0.6, 0.6, 1]
-      self.root.ids.btn_devolver.md_bg_color = [0.16, 0.5, 0.73, 1]
-    self.root.ids.txt_rut.focus = True
-
-  def actualizar_estadisticas(self):
-    with sqlite3.connect(self.db_path) as conn:
-      cursor = conn.cursor()
-      cursor.execute(
-          "SELECT COUNT(*) FROM candados WHERE estado = 'disponible'"
-      )
-      disp = cursor.fetchone()[0]
-      cursor.execute("SELECT COUNT(*) FROM candados WHERE estado = 'prestado'")
-      prest = cursor.fetchone()[0]
-      cursor.execute(
-          "SELECT COUNT(*) FROM solicitudes WHERE DATE(fecha_hora) ="
-          " DATE('now', 'localtime')"
-      )
-      mov_hoy = cursor.fetchone()[0]
-
-    self.root.ids.lbl_disp.text = f"Disponibles: {disp}"
-    self.root.ids.lbl_prest.text = f"Prestados: {prest}"
-    self.root.ids.lbl_mov.text = f"Movimientos Hoy: {mov_hoy}"
-
-  def procesar_escaneo(self, texto_ingresado):
-    rut_busqueda = texto_ingresado.strip()
-    self.root.ids.txt_rut.text = ""
-
-    if not rut_busqueda:
-      return
-
-    with sqlite3.connect(self.db_path) as conn:
-      cursor = conn.cursor()
-      cursor.execute(
-          """
-                SELECT rut, nombre, carrera, area, COALESCE(rol, 'ESTUDIANTE')
-                FROM alumnos
-                WHERE rut = ? OR nombre LIKE ?
-                LIMIT 1
-            """,
-          (rut_busqueda, f"%{rut_busqueda}%"),
-      )
-      alumno = cursor.fetchone()
-
-      if not alumno:
-        self.mostrar_modal_registro(rut_busqueda)
-        return
-
-      rut, nombre, carrera, area, rol = alumno
-
-      cursor.execute(
-          """
-                SELECT p.id, p.id_candado, c.num_casillero
-                FROM prestamos p
-                JOIN candados c ON p.id_candado = c.id_candado
-                WHERE p.rut_alumno = ? AND p.estado = 'activo'
-            """,
-          (rut,),
-      )
-      prestamo_activo = cursor.fetchone()
-
-      if self.modo_actual == "DEVOLVER":
-        if not prestamo_activo:
-          self.mostrar_resultado(
-              "⚠️ SIN PRÉSTAMOS ACTIVOS",
-              f"El usuario {nombre} [{rol}] no registra ningún candado prestado.",
-              [0.9, 0.29, 0.23, 1],
-          )
-          return
-
-        p_id, c_id, cas_num = prestamo_activo
-        cursor.execute(
-            "UPDATE prestamos SET fecha_devolucion = CURRENT_TIMESTAMP, estado"
-            " = 'devuelto' WHERE id = ?",
-            (p_id,),
+        self.root.ids.btn_devolver.md_bg_color = (
+            [0.16, 0.5, 0.73, 1] if modo == "DEVOLVER" else [0.6, 0.6, 0.6, 1]
         )
-        cursor.execute(
-            "UPDATE candados SET estado = 'disponible' WHERE id_candado = ?",
-            (c_id,),
+        self._enfocar_rut()
+
+    def actualizar_estadisticas(self):
+        try:
+            valores = self.db.estadisticas()
+            self.root.ids.lbl_disp.text = "Disponibles: {}".format(valores["disponibles"])
+            self.root.ids.lbl_prest.text = "Prestados: {}".format(valores["prestados"])
+            self.root.ids.lbl_mov.text = "Movimientos hoy: {}".format(valores["movimientos_hoy"])
+        except Exception as error:
+            self.mostrar_resultado("ERROR DE BASE DE DATOS", str(error), [0.9, 0.29, 0.23, 1])
+
+    def mostrar_resultado(self, titulo, detalle, color):
+        self.root.ids.lbl_res_titulo.text = titulo
+        self.root.ids.lbl_res_titulo.text_color = color
+        self.root.ids.lbl_res_detalle.text = detalle
+
+    def _ejecutar_operacion(self, rut):
+        if self.modo_actual == "SOLICITAR":
+            resultado = self.db.solicitar(rut)
+            titulo = "PRÉSTAMO AUTORIZADO"
+            color = [0.15, 0.68, 0.37, 1]
+            estado = "ASIGNADO"
+        else:
+            resultado = self.db.devolver(rut)
+            titulo = "DEVOLUCIÓN REGISTRADA"
+            color = [0.16, 0.5, 0.73, 1]
+            estado = "LIBERADO"
+        detalle = (
+            "Usuario: {} [{}]\nCarrera: {}\n\nCandado {}: {}\nCasillero: {}".format(
+                resultado["nombre"], resultado["rol"], resultado["carrera"],
+                estado, resultado["id_candado"], resultado["num_casillero"]
+            )
         )
-        cursor.execute(
-            """
-                    INSERT INTO solicitudes (rut, nombre, rol, carrera, accion, id_candado, num_casillero)
-                    VALUES (?, ?, ?, ?, 'DEVOLUCIÓN', ?, ?)
-                """,
-            (rut, nombre, rol, carrera, c_id, cas_num),
+        self.mostrar_resultado(titulo, detalle, color)
+        self.actualizar_estadisticas()
+
+    def procesar_escaneo(self, texto):
+        criterio = (texto or "").strip()
+        self.root.ids.txt_rut.text = ""
+        if not criterio:
+            return
+        try:
+            persona = self.db.buscar_persona(criterio)
+            if persona is None:
+                self.mostrar_modal_registro(criterio)
+                return
+            self._ejecutar_operacion(persona["rut"])
+        except (OperacionNoPermitida, BusquedaAmbigua) as error:
+            self.mostrar_resultado("OPERACIÓN NO REALIZADA", str(error), [0.9, 0.29, 0.23, 1])
+        except Exception as error:
+            self.mostrar_resultado("ERROR INESPERADO", str(error), [0.9, 0.29, 0.23, 1])
+        finally:
+            Clock.schedule_once(lambda dt: self._enfocar_rut(), 0.3)
+
+    def mostrar_modal_registro(self, rut):
+        if self.modo_actual == "DEVOLVER":
+            self.mostrar_resultado(
+                "USUARIO NO ENCONTRADO", "No se puede devolver sin usuario registrado.",
+                [0.9, 0.29, 0.23, 1]
+            )
+            return
+        caja = MDBoxLayout(orientation="vertical", spacing="8dp", size_hint_y=None,
+                           height="150dp")
+        txt_rut = MDTextField(hint_text="RUT / RUN", text=normalizar_rut(rut))
+        txt_nombre = MDTextField(hint_text="Nombre y apellidos")
+        txt_carrera = MDTextField(hint_text="Carrera / Departamento",
+                                  text="Personal Institucional")
+        for campo in (txt_rut, txt_nombre, txt_carrera):
+            caja.add_widget(campo)
+
+        def guardar(_):
+            try:
+                nuevo_rut = self.db.registrar_persona(txt_rut.text, txt_nombre.text,
+                                                      txt_carrera.text)
+                self.dialog_registro.dismiss()
+                self.dialog_registro = None
+                self._ejecutar_operacion(nuevo_rut)
+            except (OperacionNoPermitida, sqlite3.IntegrityError) as error:
+                self.mostrar_resultado("REGISTRO NO REALIZADO", str(error), [0.9, 0.29, 0.23, 1])
+            except Exception as error:
+                self.mostrar_resultado("ERROR DE REGISTRO", str(error), [0.9, 0.29, 0.23, 1])
+
+        def cancelar(_):
+            self.dialog_registro.dismiss()
+            self.dialog_registro = None
+            self._enfocar_rut()
+
+        self.dialog_registro = MDDialog(
+            title="Registrar usuario nuevo",
+            type="custom",
+            content_cls=caja,
+            buttons=[
+                MDFlatButton(text="CANCELAR", on_release=cancelar),
+                MDFlatButton(text="REGISTRAR Y SOLICITAR", on_release=guardar),
+            ],
         )
-        conn.commit()
+        self.dialog_registro.open()
 
-        self.mostrar_resultado(
-            "🔄 DEVOLUCIÓN REGISTRADA",
-            f"👤 Usuario: {nombre} [{rol}]\n🎓 Carrera: {carrera}\n\n🔑 CANDADO"
-            f" LIBERADO: {c_id} (Casillero: {cas_num})",
-            [0.16, 0.5, 0.73, 1],
+    def mostrar_ocupados(self):
+        try:
+            ocupados = self.db.ocupados()
+        except Exception as error:
+            self.mostrar_resultado("ERROR AL CONSULTAR", str(error), [0.9, 0.29, 0.23, 1])
+            return
+        lista = MDList()
+        if ocupados:
+            for registro in ocupados:
+                lista.add_widget(TwoLineListItem(
+                    text="Casillero {} - Candado {}".format(
+                        registro["num_casillero"], registro["id_candado"]),
+                    secondary_text="{} | {}".format(
+                        registro["nombre"], registro["carrera"]),
+                ))
+        else:
+            lista.add_widget(TwoLineListItem(
+                text="No existen préstamos activos", secondary_text="Todos los candados están disponibles"
+            ))
+        scroller = MDScrollView(size_hint_y=None, height="350dp")
+        scroller.add_widget(lista)
+
+        def cerrar(_):
+            self.dialog_ocupados.dismiss()
+            self.dialog_ocupados = None
+            self._enfocar_rut()
+
+        self.dialog_ocupados = MDDialog(
+            title="Candados ocupados ({})".format(len(ocupados)),
+            type="custom", content_cls=scroller,
+            buttons=[MDFlatButton(text="CERRAR", on_release=cerrar)],
         )
+        self.dialog_ocupados.open()
 
-      else:  # Modo SOLICITAR
-        if prestamo_activo:
-          _, c_id, cas_num = prestamo_activo
-          self.mostrar_resultado(
-              "⚠️ YA TIENE UN CANDADO ASIGNADO",
-              f"El usuario {nombre} [{rol}] ya posee el candado {c_id} (Casillero"
-              f" {cas_num}).",
-              [0.9, 0.29, 0.23, 1],
-          )
-          return
+    def enviar_informe_manual(self):
+        """Abre el correo del usuario. Nunca almacena contraseñas SMTP en el APK."""
+        if "@" not in DESTINATARIO_INFORME or DESTINATARIO_INFORME.startswith("destinatario_"):
+            self.mostrar_resultado(
+                "FALTA CONFIGURAR DESTINATARIO",
+                "Modifique DESTINATARIO_INFORME en main.py antes de enviar correos.",
+                [0.9, 0.29, 0.23, 1],
+            )
+            return
+        try:
+            informe = self.db.informe_texto()
+            asunto = "Informe de candados - {}".format(datetime.now().strftime("%d-%m-%Y %H:%M"))
+            if platform == "android":
+                from jnius import autoclass
+                Intent = autoclass("android.content.Intent")
+                Uri = autoclass("android.net.Uri")
+                PythonActivity = autoclass("org.kivy.android.PythonActivity")
+                intent = Intent(Intent.ACTION_SENDTO)
+                intent.setData(Uri.parse("mailto:" + DESTINATARIO_INFORME))
+                intent.putExtra(Intent.EXTRA_SUBJECT, asunto)
+                intent.putExtra(Intent.EXTRA_TEXT, informe)
+                PythonActivity.mActivity.startActivity(Intent.createChooser(intent, "Enviar informe"))
+            else:
+                # mailto admite textos cortos: el informe completo se mantiene en Android.
+                resumen = "\n".join(informe.splitlines()[:18])
+                url = "mailto:{}?subject={}&body={}".format(
+                    quote(DESTINATARIO_INFORME), quote(asunto), quote(resumen))
+                if not webbrowser.open(url):
+                    raise RuntimeError("No se encontró una aplicación de correo predeterminada.")
+            self.mostrar_resultado(
+                "INFORME PREPARADO",
+                "Se abrió el correo para que revise y confirme el envío.",
+                [0.16, 0.5, 0.73, 1],
+            )
+        except Exception as error:
+            self.mostrar_resultado(
+                "NO SE PUDO ABRIR EL CORREO", str(error), [0.9, 0.29, 0.23, 1]
+            )
 
-        cursor.execute(
-            "SELECT id_candado, num_casillero FROM candados WHERE estado ="
-            " 'disponible' LIMIT 1"
-        )
-        candado = cursor.fetchone()
 
-        if not candado:
-          self.mostrar_resultado(
-              "⚠️ SIN CANDADOS DISPONIBLES",
-              "No quedan candados en el inventario.",
-              [0.9, 0.29, 0.23, 1],
-          )
-          return
-
-        c_id, cas_num = candado
-        cursor.execute(
-            "INSERT INTO prestamos (rut_alumno, id_candado) VALUES (?, ?)",
-            (rut, c_id),
-        )
-        cursor.execute(
-            "UPDATE candados SET estado = 'prestado' WHERE id_candado = ?",
-            (c_id,),
-        )
-        cursor.execute(
-            """
-                    INSERT INTO solicitudes (rut, nombre, rol, carrera, accion, id_candado, num_casillero)
-                    VALUES (?, ?, ?, ?, 'SOLICITUD', ?, ?)
-                """,
-            (rut, nombre, rol, carrera, c_id, cas_num),
-        )
-        conn.commit()
-
-        self.mostrar_resultado(
-            "✅ PRÉSTAMO AUTORIZADO",
-            f"👤 Usuario: {nombre} [{rol}]\n🎓 Carrera: {carrera}\n\n🔑 CANDADO"
-            f" ASIGNADO: {c_id} (Casillero: {cas_num})",
-            [0.15, 0.68, 0.37, 1],
-        )
-
-    self.actualizar_estadisticas()
-
-  def mostrar_resultado(self, titulo, detalle, color):
-    self.root.ids.lbl_res_titulo.text = titulo
-    self.root.ids.lbl_res_titulo.text_color = color
-    self.root.ids.lbl_res_detalle.text = detalle
-
-  def mostrar_modal_registro(self, rut):
-    """Modal interactivo para registrar un usuario no encontrado."""
-    box = MDBoxLayout(
-        orientation="vertical", spacing="10dp", size_hint_y=None, height="120dp"
-    )
-    txt_nombre = MDTextField(
-        hint_text="Nombre y Apellidos", font_size="16sp"
-    )
-    txt_carrera = MDTextField(
-        hint_text="Carrera / Departamento",
-        text="Personal Institucional",
-        font_size="16sp",
-    )
-    box.add_widget(txt_nombre)
-    box.add_widget(txt_carrera)
-
-    def guardar_accion(x):
-      nom = txt_nombre.text.strip() or f"Usuario {rut}"
-      car = txt_carrera.text.strip() or "Personal Institucional"
-      self.guardar_registro
+if __name__ == "__main__":
+    CasillerosApp().run()

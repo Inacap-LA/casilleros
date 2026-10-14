@@ -1,65 +1,38 @@
 [app]
-
-# (str) Title of your application
+# Control de Casilleros - INACAP Los Ángeles.
 title = Casilleros Inacap
-
-# (str) Package name
 package.name = casilleros
-
-# (str) Package domain (needed for android/ios packaging)
 package.domain = cl.inacap
-
-# (str) Source code where the main.py live
 source.dir = .
 
-# (list) Source files to include (let empty to include all the files)
-source.include_exts = py,png,jpg,kv,atlas,json
+# CRÍTICO: incluir DB para que el APK encuentre el padrón de alumnos y candados.
+# Advertencia: el APK NO cifra la DB. No distribuir un padrón de RUT personales
+# sin controles institucionales adecuados de privacidad/acceso.
+source.include_exts = py,png,jpg,jpeg,kv,atlas,json,db
+source.exclude_dirs = tests,bin,venv,.venv,__pycache__
+version = 1.0.1
 
-# (str) Application versioning
-version = 1.0.0
+# Python-for-Android compila su PROPIO Python. No basta con setup-python del CI.
+# Kivy 2.3.0 soporta Python hasta 3.12: impedir que p4a elija 3.14.
+requirements = python3==3.12.9,hostpython3==3.12.9,kivy==2.3.0,kivymd==1.1.1,pyjnius,pillow
 
-# (list) Application requirements
-# NOTA: Cython está fijado en el workflow. Aquí se definen los paquetes de Python.
-requirements = python3,kivy==2.3.0,kivymd==1.1.1,requests,urllib3,pillow,openssl
-
-# (str) Supported orientation (one of landscape, sensorLandscape, portrait or all)
 orientation = portrait
-
-# (bool) Indicate if the application should be fullscreen or not
 fullscreen = 0
-
-# (int) Log level (0 = error only, 1 = info, 2 = debug (full output))
 log_level = 2
 
-#
-# Android specific
-#
-
-# (list) Permissions
-android.permissions = INTERNET, ACCESS_NETWORK_STATE
-
-# (int) Target Android API, should be as high as possible.
+# Se genera APK debug de instalación directa. Mantener API 33 reduce cambios
+# respecto al proyecto original; actualizar a API 35+ para publicar en Play.
 android.api = 33
-
-# (int) Minimum API required
 android.minapi = 21
-
-# (str) Android NDK version to use
 android.ndk = 25b
-
-# (bool) If True, then skip try to update the android sdk
-android.skip_update = False
-
-# (bool) If True, then accept all the licenses from android sdk tools
 android.accept_sdk_license = True
+android.skip_update = False
+android.archs = arm64-v8a
 
-# (list) The Android architectures to build for
-android.archs = arm64-v8a, armeabi-v7a
+# Ya no se requieren permisos de red: los informes se comparten mediante
+# las aplicaciones instaladas, sin alojar contraseñas SMTP en el APK.
+# android.permissions =
 
 [buildozer]
-
-# (int) Log level (0 = error only, 1 = info, 2 = debug)
 log_level = 2
-
-# (int) Display warning if buildozer is run as root (0 = disable, 1 = enable)
 warn_on_root = 1
