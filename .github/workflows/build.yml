@@ -2,61 +2,104 @@ name: Build Android APK
 
 on:
   push:
-    branches: [ "main", "master" ]
+    branches: [main, master]
   pull_request:
-    branches: [ "main", "master" ]
+    branches: [main, master]
   workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: casilleros-apk-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
     runs-on: ubuntu-22.04
-
+    timeout-minutes: 120
     steps:
-      - name: Checkout repository
+      - name: Descargar repositorio
         uses: actions/checkout@v4
 
-      - name: Set up Python 3.10
+      - name: Instalar Python del runner (NO es el Python del APK)
         uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: '3.10'
 
-      - name: Set up Java 17
+      - name: Instalar Java 17
         uses: actions/setup-java@v5
         with:
-          distribution: 'temurin'
+          distribution: temurin
           java-version: '17'
 
-      - name: Install system dependencies
+      - name: Verificar sintaxis Python y lógica SQLite
+        run: |
+          python -m compileall -q main.py database.py
+          python -m unittest discover -s tests -v
+
+      - name: Verificar base de datos a empaquetar
+        run: |
+          python - <<'PYCODE'
+          from pathlib import Path
+          import sqlite3
+          archivo = Path('casilleros.db')
+          if not archivo.is_file():
+              raise SystemExit('ERROR: falta casilleros.db en la raíz del repositorio.')
+          con = sqlite3.connect(f'file:{archivo}?mode=ro', uri=True)
+          integridad = con.execute('PRAGMA quick_check').fetchone()[0]
+          if integridad != 'ok':
+              raise SystemExit('ERROR: la base de datos presenta problemas de integridad.')
+          print('Integridad:', integridad)
+          print('Alumnos:', con.execute('SELECT COUNT(*) FROM alumnos').fetchone()[0])
+          print('Candados:', con.execute('SELECT COUNT(*) FROM candados').fetchone()[0])
+          con.close()
+          PYCODE
+
+      - name: Dependencias del sistema
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential ccache git libffi-dev libssl-dev zip unzip zlib1g-dev libltdl-dev autoconf libtool pkg-config
+          sudo apt-get install -y \
+            build-essential ccache git libffi-dev libssl-dev zip unzip \
+            zlib1g-dev libltdl-dev autoconf libtool pkg-config \
+            libncurses5-dev libncursesw5-dev libtinfo6 cmake automake \
+            autopoint gettext
 
-      - name: Install Buildozer and Cython (Versión estable)
+      - name: Instalar Buildozer y Cython compatibles
         run: |
           python -m pip install --upgrade pip
-          pip install "cython==0.29.36" "buildozer>=1.5.0"
+          python -m pip install 'cython==0.29.36' 'buildozer==1.6.0'
+          buildozer --version
 
-      - name: Limpiar directorio previo
-        run: rm -rf .buildozer/
-
-      - name: Cache Buildozer & Android SDK/NDK
+      - name: Cache de SDK, NDK y compilación
         uses: actions/cache@v4
         with:
           path: |
             ~/.buildozer
-            .buildozer
             ~/.ccache
-          key: ${{ runner.os }}-buildozer-v4-${{ hashFiles('buildozer.spec') }}
+          key: ${{ runner.os }}-casilleros-v5-${{ hashFiles('buildozer.spec') }}
           restore-keys: |
-            ${{ runner.os }}-buildozer-v4-
+            ${{ runner.os }}-casilleros-v5-
 
-      - name: Build APK with Buildozer
+      - name: Compilar APK (capturar el log completo)
+        shell: bash
         run: |
-          buildozer android debug
+          set -o pipefail
+          buildozer -v android debug 2>&1 | tee buildozer.log
 
-      - name: Upload APK Artifact
+      - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: Casilleros-App-Debug
+          name: Casilleros-Inacap-APK-Debug
           path: bin/*.apk
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Publicar log si falla el proceso
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Casilleros-Inacap-Log-Error
+          path: buildozer.log
+          if-no-files-found: ignore
           retention-days: 7
