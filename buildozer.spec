@@ -1,29 +1,65 @@
 [app]
-title = Control Casilleros
+
+# (str) Title of your application
+title = Casilleros Inacap
+
+# (str) Package name
 package.name = casilleros
-package.domain = cl.duoc.casilleros
+
+# (str) Package domain (needed for android/ios packaging)
+package.domain = cl.inacap
+
+# (str) Source code where the main.py live
 source.dir = .
-source.include_exts = py,png,jpg,kv,atlas,db
+
+# (list) Source files to include (let empty to include all the files)
+source.include_exts = py,png,jpg,kv,atlas,json
+
+# (str) Application versioning
 version = 1.0.0
 
+# (list) Application requirements
+# NOTA: Cython está fijado en el workflow. Aquí se definen los paquetes de Python.
 requirements = python3,kivy==2.3.0,kivymd==1.1.1,requests,urllib3,pillow,openssl
 
-orientation = landscape
-fullscreen = 1
+# (str) Supported orientation (one of landscape, sensorLandscape, portrait or all)
+orientation = portrait
 
-android.permissions = INTERNET, READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE, CAMERA
-android.api = 33
-android.minapi = 21
-android.accept_sdk_license = True
-android.archs = arm64-v8a
-android.ndk = 25b
+# (bool) Indicate if the application should be fullscreen or not
+fullscreen = 0
 
-[buildozer]
-# Nivel de detalle del registro:
-# 0 = Solo errores
-# 1 = Información general (Recomendado para GitHub Actions)
-# 2 = Depuración completa (genera demasiado texto y recorta el log)
+# (int) Log level (0 = error only, 1 = info, 2 = debug (full output))
 log_level = 2
 
-# (int) Mostrar advertencia si buildozer se ejecuta como root (0 = no, 1 = sí)
+#
+# Android specific
+#
+
+# (list) Permissions
+android.permissions = INTERNET, ACCESS_NETWORK_STATE
+
+# (int) Target Android API, should be as high as possible.
+android.api = 33
+
+# (int) Minimum API required
+android.minapi = 21
+
+# (str) Android NDK version to use
+android.ndk = 25b
+
+# (bool) If True, then skip try to update the android sdk
+android.skip_update = False
+
+# (bool) If True, then accept all the licenses from android sdk tools
+android.accept_sdk_license = True
+
+# (list) The Android architectures to build for
+android.archs = arm64-v8a, armeabi-v7a
+
+[buildozer]
+
+# (int) Log level (0 = error only, 1 = info, 2 = debug)
+log_level = 2
+
+# (int) Display warning if buildozer is run as root (0 = disable, 1 = enable)
 warn_on_root = 1
