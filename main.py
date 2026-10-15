@@ -5,6 +5,7 @@ Requiere Kivy 2.3.0 y KivyMD 1.1.1.
 """
 
 from datetime import datetime
+from lector_carnet import extraer_run, iniciar_escaneo_android
 import sqlite3
 from urllib.parse import quote
 import webbrowser
@@ -123,7 +124,7 @@ MDScreen:
                     padding: '16dp'
                     spacing: '8dp'
                     size_hint_y: None
-                    height: '122dp'
+                    height: '184dp'
                     radius: [12,]
                     elevation: 2
 
@@ -135,6 +136,12 @@ MDScreen:
                         font_size: '18sp'
                         multiline: False
                         on_text_validate: app.procesar_escaneo(self.text)
+
+                    MDRaisedButton:
+                        text: 'ESCANEAR CARNET (QR)'
+                        size_hint_y: None
+                        height: '44dp'
+                        on_release: app.abrir_camara_carnet()
 
                 MDCard:
                     orientation: 'vertical'
@@ -173,6 +180,8 @@ class CasillerosApp(MDApp):
         self.modo_actual = "SOLICITAR"
         self.dialog_registro = None
         self.dialog_ocupados = None
+        self._lector_qr_activo = False
+        self._referencias_lector_qr = None
 
     def build(self):
         self.theme_cls.primary_palette = "Blue"
@@ -231,6 +240,67 @@ class CasillerosApp(MDApp):
         )
         self.mostrar_resultado(titulo, detalle, color)
         self.actualizar_estadisticas()
+
+    def abrir_camara_carnet(self):
+        """Abre el escáner nativo (QR y PDF417) sin sustituir el lector USB."""
+        if platform != "android":
+            self.mostrar_resultado(
+                "ESCÁNER SOLO EN ANDROID",
+                "Puede ingresar el RUN manualmente en este dispositivo.",
+                [0.9, 0.29, 0.23, 1],
+            )
+            return
+        if self._lector_qr_activo:
+            return
+        self._lector_qr_activo = True
+        self.root.ids.txt_rut.focus = False
+        try:
+            self._referencias_lector_qr = iniciar_escaneo_android(
+                al_leer=lambda dato: Clock.schedule_once(
+                    lambda _dt: self._codigo_carnet_leido(dato), 0
+                ),
+                al_error=lambda aviso: Clock.schedule_once(
+                    lambda _dt: self._error_lector_qr(aviso), 0
+                ),
+                al_cancelar=lambda: Clock.schedule_once(
+                    lambda _dt: self._cancelar_lector_qr(), 0
+                ),
+            )
+        except Exception:
+            self._error_lector_qr(
+                "No fue posible iniciar el lector. Verifique que Google Play Services esté actualizado."
+            )
+
+    def _cerrar_lector_qr(self):
+        self._lector_qr_activo = False
+        self._referencias_lector_qr = None
+
+    def _codigo_carnet_leido(self, contenido):
+        self._cerrar_lector_qr()
+        rut = extraer_run(contenido)
+        if rut is None:
+            self.mostrar_resultado(
+                "CÓDIGO LEÍDO SIN RUN UTILIZABLE",
+                "Se pudo leer el código, pero no contiene un RUN accesible en "
+                "un formato reconocido. Ingrese el RUN manualmente. No se "
+                "guardó el contenido del QR.",
+                [0.9, 0.29, 0.23, 1],
+            )
+            self._enfocar_rut()
+            return
+        # Solo se entrega el RUN validado al flujo actual de préstamo/devolución.
+        self.procesar_escaneo(rut)
+
+    def _error_lector_qr(self, aviso):
+        self._cerrar_lector_qr()
+        self.mostrar_resultado(
+            "ESCÁNER NO DISPONIBLE", aviso, [0.9, 0.29, 0.23, 1]
+        )
+        self._enfocar_rut()
+
+    def _cancelar_lector_qr(self):
+        self._cerrar_lector_qr()
+        self._enfocar_rut()
 
     def procesar_escaneo(self, texto):
         criterio = (texto or "").strip()

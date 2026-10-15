@@ -11,7 +11,7 @@ source.dir = .
 source.include_exts = py,png,jpg,jpeg,kv,atlas,json,db
 source.exclude_dirs = tests,bin,venv,.venv,__pycache__
 source.exclude_patterns = test_*.py,corregir_apk_python.py
-version = 1.0.2
+version = 1.0.3
 
 # Python-for-Android compila su PROPIO Python. No basta con setup-python del CI.
 # Kivy 2.3.0 soporta Python hasta 3.12: impedir que p4a elija 3.14.
@@ -30,6 +30,11 @@ android.ndk = 25b
 android.accept_sdk_license = True
 android.skip_update = False
 android.archs = arm64-v8a
+
+# Escáner de QR/PDF417 de Google Play Services. Cámara gestionada por Google.
+# No es necesario solicitar android.permission.CAMERA a Casilleros.
+android.gradle_dependencies = com.google.android.gms:play-services-code-scanner:16.1.0
+android.enable_androidx = True
 
 # Ya no se requieren permisos de red: los informes se comparten mediante
 # las aplicaciones instaladas, sin alojar contraseñas SMTP en el APK.
