@@ -85,16 +85,18 @@ def guardar_en_descargas(nombre, contenido):
         raise RuntimeError("Exportación a Descargas disponible desde Android 10.")
     PythonActivity = autoclass("org.kivy.android.PythonActivity")
     ContentValues = autoclass("android.content.ContentValues")
-    MediaStore = autoclass("android.provider.MediaStore")
+    MediaColumns = autoclass("android.provider.MediaStore$MediaColumns")
+    Downloads = autoclass("android.provider.MediaStore$Downloads")
+    Integer = autoclass("java.lang.Integer")
     Environment = autoclass("android.os.Environment")
     resolver = PythonActivity.mActivity.getContentResolver()
     valores = ContentValues()
-    valores.put(MediaStore.MediaColumns.DISPLAY_NAME, nombre)
-    valores.put(MediaStore.MediaColumns.MIME_TYPE, "text/csv")
-    valores.put(MediaStore.MediaColumns.RELATIVE_PATH,
+    valores.put(MediaColumns.DISPLAY_NAME, nombre)
+    valores.put(MediaColumns.MIME_TYPE, "text/csv")
+    valores.put(MediaColumns.RELATIVE_PATH,
                 Environment.DIRECTORY_DOWNLOADS + "/CasillerosINACAP/")
-    valores.put(MediaStore.MediaColumns.IS_PENDING, 1)
-    uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, valores)
+    valores.put(MediaColumns.IS_PENDING, Integer(1))
+    uri = resolver.insert(Downloads.EXTERNAL_CONTENT_URI, valores)
     if uri is None:
         raise OSError("Android no permitió crear el CSV en Descargas")
     descriptor = None
@@ -108,7 +110,7 @@ def guardar_en_descargas(nombre, contenido):
         descriptor.close()
         descriptor = None
         confirmacion = ContentValues()
-        confirmacion.put(MediaStore.MediaColumns.IS_PENDING, 0)
+        confirmacion.put(MediaColumns.IS_PENDING, Integer(0))
         resolver.update(uri, confirmacion, None, None)
     except Exception:
         if descriptor is not None:
