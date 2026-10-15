@@ -3,8 +3,6 @@ name: Build Android APK
 on:
   push:
     branches: [main, master]
-  pull_request:
-    branches: [main, master]
   workflow_dispatch:
 
 permissions:
@@ -83,23 +81,26 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-casilleros-v27-
 
-      - name: Preparar clave de depuración antes de compilar
+      # IMPORTANTE: La misma clave se reutiliza siempre. Nunca generar una
+      # nueva en el runner: eso impediria actualizar la app instalada.
+      - name: Restaurar firma persistente desde GitHub Secrets
         shell: bash
+        env:
+          CASILLEROS_DEBUG_KEYSTORE_B64: ${{ secrets.CASILLEROS_DEBUG_KEYSTORE_B64 }}
         run: |
           set -euo pipefail
-          mkdir -p "$HOME/.android"
-          if [ ! -f "$HOME/.android/debug.keystore" ]; then
-            keytool -genkeypair \
-              -keystore "$HOME/.android/debug.keystore" \
-              -alias androiddebugkey \
-              -storepass android -keypass android \
-              -keyalg RSA -keysize 2048 -validity 10000 \
-              -dname "CN=Android Debug,O=Android,C=US" -noprompt
+          if [ -z "$CASILLEROS_DEBUG_KEYSTORE_B64" ]; then
+            echo "::error::Falta el secreto CASILLEROS_DEBUG_KEYSTORE_B64. Preparalo desde tu Mac antes de ejecutar este workflow."
+            exit 1
           fi
+          mkdir -p "$HOME/.android"
+          chmod 700 "$HOME/.android"
+          printf '%s' "$CASILLEROS_DEBUG_KEYSTORE_B64" | base64 --decode > "$HOME/.android/debug.keystore"
+          chmod 600 "$HOME/.android/debug.keystore"
           keytool -list -keystore "$HOME/.android/debug.keystore" \
             -alias androiddebugkey -storepass android >/dev/null
           echo "ANDROID_USER_HOME=$HOME/.android" >> "$GITHUB_ENV"
-          echo "Clave de depuración lista antes de Buildozer"
+          echo "Firma persistente restaurada y validada."
 
       - name: Compilar APK debug original
         shell: bash
@@ -107,15 +108,15 @@ jobs:
           set -o pipefail
           buildozer -v android debug 2>&1 | tee buildozer.log
 
-      - name: Corregir biblioteca Python y firmar APK v27
+      - name: Corregir biblioteca Python y firmar APK v28
         run: |
-          python corregir_apk_python.py --output bin/casilleros-v27-debug.apk
+          python corregir_apk_python.py --output bin/casilleros-v28-debug.apk
 
       - name: Publicar solo el APK corregido
         uses: actions/upload-artifact@v4
         with:
-          name: Casilleros-Inacap-APK-v27-Prueba
-          path: bin/casilleros-v27-debug.apk
+          name: Casilleros-Inacap-APK-v28-Firma-Estable
+          path: bin/casilleros-v28-debug.apk
           if-no-files-found: error
           retention-days: 7
 
