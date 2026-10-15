@@ -10,7 +10,8 @@ source.dir = .
 # sin controles institucionales adecuados de privacidad/acceso.
 source.include_exts = py,png,jpg,jpeg,kv,atlas,json,db
 source.exclude_dirs = tests,bin,venv,.venv,__pycache__
-version = 1.0.1
+source.exclude_patterns = test_*.py,corregir_apk_python.py
+version = 1.0.2
 
 # Python-for-Android compila su PROPIO Python. No basta con setup-python del CI.
 # Kivy 2.3.0 soporta Python hasta 3.12: impedir que p4a elija 3.14.
@@ -23,6 +24,7 @@ log_level = 2
 # Se genera APK debug de instalación directa. Mantener API 33 reduce cambios
 # respecto al proyecto original; actualizar a API 35+ para publicar en Play.
 android.api = 33
+# API 26 (Android 8.0) habilita getgrent/setgrent/endgrent requeridas por CPython 3.12.9.
 android.minapi = 26
 android.ndk = 25b
 android.accept_sdk_license = True

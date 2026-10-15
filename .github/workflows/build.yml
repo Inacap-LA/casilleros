@@ -22,80 +22,86 @@ jobs:
       - name: Descargar repositorio
         uses: actions/checkout@v4
 
-      - name: Instalar Python del runner (NO es el Python del APK)
+      - name: Preparar Python del runner
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
-      - name: Instalar Java 17
+      - name: Preparar Java 17
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Verificar sintaxis Python y lógica SQLite
+      - name: Pruebas de sintaxis y base SQLite
+        shell: bash
         run: |
-          python -m compileall -q main.py database.py
-          python -m unittest discover -s tests -v
-
-      - name: Verificar base de datos a empaquetar
-        run: |
+          set -euo pipefail
+          python -m compileall -q main.py database.py corregir_apk_python.py
+          if [ -f test_database.py ]; then
+            python -m unittest -v test_database
+          elif [ -f tests/test_database.py ]; then
+            python -m unittest discover -s tests -p 'test_*.py' -v
+          else
+            echo '::error::Falta test_database.py (o tests/test_database.py)'
+            exit 1
+          fi
           python - <<'PYCODE'
           from pathlib import Path
           import sqlite3
           archivo = Path('casilleros.db')
-          if not archivo.is_file():
-              raise SystemExit('ERROR: falta casilleros.db en la raíz del repositorio.')
+          if not archivo.exists():
+              raise SystemExit('ERROR: falta casilleros.db')
           con = sqlite3.connect(f'file:{archivo}?mode=ro', uri=True)
-          integridad = con.execute('PRAGMA quick_check').fetchone()[0]
-          if integridad != 'ok':
-              raise SystemExit('ERROR: la base de datos presenta problemas de integridad.')
-          print('Integridad:', integridad)
-          print('Alumnos:', con.execute('SELECT COUNT(*) FROM alumnos').fetchone()[0])
-          print('Candados:', con.execute('SELECT COUNT(*) FROM candados').fetchone()[0])
+          assert con.execute('PRAGMA quick_check').fetchone()[0] == 'ok'
+          print('Integridad SQLite: OK')
           con.close()
           PYCODE
 
-      - name: Dependencias del sistema
+      - name: Instalar dependencias del sistema
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             build-essential ccache git libffi-dev libssl-dev zip unzip \
             zlib1g-dev libltdl-dev autoconf libtool pkg-config \
             libncurses5-dev libncursesw5-dev libtinfo6 cmake automake \
-            autopoint gettext
+            autopoint gettext patchelf binutils
 
-      - name: Instalar Buildozer y Cython compatibles
+      - name: Instalar Buildozer
         run: |
           python -m pip install --upgrade pip
           python -m pip install 'cython==0.29.36' 'buildozer==1.6.0'
           buildozer --version
 
-      - name: Cache de SDK, NDK y compilación
+      - name: Cache SDK NDK
         uses: actions/cache@v4
         with:
           path: |
             ~/.buildozer
             ~/.ccache
-          key: ${{ runner.os }}-casilleros-v5-${{ hashFiles('buildozer.spec') }}
+          key: ${{ runner.os }}-casilleros-v27-${{ hashFiles('buildozer.spec') }}
           restore-keys: |
-            ${{ runner.os }}-casilleros-v5-
+            ${{ runner.os }}-casilleros-v27-
 
-      - name: Compilar APK (capturar el log completo)
+      - name: Compilar APK debug original
         shell: bash
         run: |
           set -o pipefail
           buildozer -v android debug 2>&1 | tee buildozer.log
 
-      - name: Publicar APK
+      - name: Corregir biblioteca Python y firmar APK v27
+        run: |
+          python corregir_apk_python.py --output bin/casilleros-v27-debug.apk
+
+      - name: Publicar solo el APK corregido
         uses: actions/upload-artifact@v4
         with:
-          name: Casilleros-Inacap-APK-Debug
-          path: bin/*.apk
+          name: Casilleros-Inacap-APK-v27-Prueba
+          path: bin/casilleros-v27-debug.apk
           if-no-files-found: error
           retention-days: 7
 
-      - name: Publicar log si falla el proceso
+      - name: Publicar log si falla
         if: failure()
         uses: actions/upload-artifact@v4
         with:
