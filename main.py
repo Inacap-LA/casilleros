@@ -6,6 +6,7 @@ Requiere Kivy 2.3.0 y KivyMD 1.1.1.
 
 from datetime import datetime
 from lector_carnet import extraer_run, iniciar_escaneo_android
+from registro_diario import crear_csv_diario, guardar_en_descargas
 import sqlite3
 from urllib.parse import quote
 import webbrowser
@@ -124,7 +125,7 @@ MDScreen:
                     padding: '16dp'
                     spacing: '8dp'
                     size_hint_y: None
-                    height: '184dp'
+                    height: '244dp'
                     radius: [12,]
                     elevation: 2
 
@@ -142,6 +143,12 @@ MDScreen:
                         size_hint_y: None
                         height: '44dp'
                         on_release: app.abrir_camara_carnet()
+
+                    MDRaisedButton:
+                        text: 'EXPORTAR REGISTRO DEL DÍA'
+                        size_hint_y: None
+                        height: '44dp'
+                        on_release: app.exportar_registro_hoy()
 
                 MDCard:
                     orientation: 'vertical'
@@ -397,6 +404,39 @@ class CasillerosApp(MDApp):
             buttons=[MDFlatButton(text="CERRAR", on_release=cerrar)],
         )
         self.dialog_ocupados.open()
+
+    def exportar_registro_hoy(self):
+        """Guarda el CSV del día en Descargas/CasillerosINACAP."""
+        fecha = datetime.now().date()
+        nombre = "Casilleros_INACAP_{}_{}.csv".format(
+            fecha.strftime("%Y-%m-%d"), datetime.now().strftime("%H%M%S")
+        )
+        try:
+            contenido, resumen = crear_csv_diario(self.db.ruta_db, fecha)
+            destino = guardar_en_descargas(nombre, contenido)
+            mensaje = (
+                "Archivo guardado en:\n{}\n\n"
+                "Movimientos: {}\nEntregas: {}\nDevoluciones: {}".format(
+                    destino, resumen["total"], resumen["entregas"], resumen["devoluciones"]
+                )
+            )
+            self.mostrar_resultado(
+                "REGISTRO DIARIO EXPORTADO", mensaje, [0.15, 0.68, 0.37, 1]
+            )
+            self._aviso_exportacion("Registro diario exportado", mensaje)
+        except Exception as error:
+            texto = "No se pudo guardar el CSV: {}".format(error)
+            self.mostrar_resultado(
+                "ERROR AL EXPORTAR", texto, [0.9, 0.29, 0.23, 1]
+            )
+            self._aviso_exportacion("No se pudo exportar", texto)
+
+    def _aviso_exportacion(self, titulo, mensaje):
+        dialogo = MDDialog(title=titulo, text=mensaje)
+        dialogo.buttons = [MDFlatButton(
+            text="ENTENDIDO", on_release=lambda *_: dialogo.dismiss()
+        )]
+        dialogo.open()
 
     def enviar_informe_manual(self):
         """Abre el correo del usuario. Nunca almacena contraseñas SMTP en el APK."""

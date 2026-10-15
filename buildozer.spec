@@ -11,7 +11,7 @@ source.dir = .
 source.include_exts = py,png,jpg,jpeg,kv,atlas,json,db
 source.exclude_dirs = tests,bin,venv,.venv,__pycache__
 source.exclude_patterns = test_*.py,corregir_apk_python.py
-version = 1.0.3
+version = 1.0.4
 
 # Python-for-Android compila su PROPIO Python. No basta con setup-python del CI.
 # Kivy 2.3.0 soporta Python hasta 3.12: impedir que p4a elija 3.14.

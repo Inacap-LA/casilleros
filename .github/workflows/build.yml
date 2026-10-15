@@ -35,7 +35,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python -m compileall -q main.py database.py corregir_apk_python.py
+          python -m compileall -q main.py database.py corregir_apk_python.py registro_diario.py
+          python -m unittest -v test_registro_diario
           if [ -f test_database.py ]; then
             python -m unittest -v test_database
           elif [ -f tests/test_database.py ]; then
@@ -108,15 +109,15 @@ jobs:
           set -o pipefail
           buildozer -v android debug 2>&1 | tee buildozer.log
 
-      - name: Corregir biblioteca Python y firmar APK v28
+      - name: Corregir biblioteca Python y firmar APK v29
         run: |
-          python corregir_apk_python.py --output bin/casilleros-v28-debug.apk
+          python corregir_apk_python.py --output bin/casilleros-v29-debug.apk
 
       - name: Publicar solo el APK corregido
         uses: actions/upload-artifact@v4
         with:
-          name: Casilleros-Inacap-APK-v28-Firma-Estable
-          path: bin/casilleros-v28-debug.apk
+          name: Casilleros-Inacap-APK-v29-Firma-Estable
+          path: bin/casilleros-v29-debug.apk
           if-no-files-found: error
           retention-days: 7
 
