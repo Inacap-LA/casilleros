@@ -83,6 +83,24 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-casilleros-v27-
 
+      - name: Preparar clave de depuración antes de compilar
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.android"
+          if [ ! -f "$HOME/.android/debug.keystore" ]; then
+            keytool -genkeypair \
+              -keystore "$HOME/.android/debug.keystore" \
+              -alias androiddebugkey \
+              -storepass android -keypass android \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=Android Debug,O=Android,C=US" -noprompt
+          fi
+          keytool -list -keystore "$HOME/.android/debug.keystore" \
+            -alias androiddebugkey -storepass android >/dev/null
+          echo "ANDROID_USER_HOME=$HOME/.android" >> "$GITHUB_ENV"
+          echo "Clave de depuración lista antes de Buildozer"
+
       - name: Compilar APK debug original
         shell: bash
         run: |
