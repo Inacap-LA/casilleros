@@ -28,7 +28,7 @@ from database import (
 )
 
 # Reemplazar por una casilla INSTITUCIONAL autorizada, nunca por una contraseña.
-DESTINATARIO_INFORME = "destinatario_informe@empresa.cl"
+DESTINATARIO_INFORME = "orobles@inacap.cl"
 
 KV = """
 MDScreen:
